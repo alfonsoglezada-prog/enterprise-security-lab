@@ -1,0 +1,86 @@
+# Windows Server con Active Directory.
+
+# DESCRIPCIÓN:
+-  Este proyecto consiste en la implementación de un entorno de Windows Server con Active Directory (AD DS) 
+para la gestión centralizada de usuarios, equipos y políticas dentro de una red local virtualizada en Proxmox.
+
+---
+
+# Infraestructura
+
+- Hypervisor: Proxmox VE
+- Sistema operativo: Windows Server (Windows Server 2022 Standard Evaluation 21H2)
+- Red: vmbr1 (red interna conectada a pfSense)
+- IP: Estática
+- DNS: Pfsense
+
+---
+
+# Objetivos del proyecto
+
+- Implementar un dominio con Active Directory
+- Centralizar la gestión de usuarios y equipos
+- Configurar DNS interno del dominio
+- Unir máquinas cliente al dominio
+- Simular entorno empresarial
+
+---
+
+# Configuración de red
+
+- IP del servidor: 192.168.170.10
+- Gateway: 192.168.170.1 
+- Dominio: laboratorio.local
+
+---
+
+# Usuarios y grupos
+
+Se han creado los siguientes usuarios:
+
+- usuario1 → Departamento IT
+- usuario2 → Administración
+
+Grupos:
+- IT
+- Admins
+- Users
+
+---
+
+# Equipos unidos al dominio
+
+- PC-CLIENTE-01
+- PC-CLIENTE-02
+
+---
+
+# Políticas de grupo (GPO)
+
+- Política de contraseña segura
+- Bloqueo de pantalla automático
+- Restricción de panel de control (opcional)
+- Mapeo de unidades de red (opcional)
+
+---
+
+# Problemas encontrados
+
+- Problema inicial con DHCP en VM (resuelto cambiando configuración de red en Proxmox)
+- Falta de drivers de red en Windows Server (resuelto instalando E1000/VirtIO)
+- Errores de resolución DNS iniciales y conectividad, configuración errónea en pfSense
+
+---
+
+# Conclusión
+
+El entorno Active Directory permite centralizar la administración de usuarios y recursos, simulando una infraestructura empresarial real.
+
+---
+
+# Mejoras futuras
+
+- Implementar RDS (Remote Desktop Services)
+- Añadir servidor de backups
+- Integración con firewall avanzado (pfSense rules)
+- Implementar MFA o seguridad avanzada
