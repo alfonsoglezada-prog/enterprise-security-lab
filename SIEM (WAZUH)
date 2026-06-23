@@ -48,7 +48,7 @@ Se aislaron las alertas en tiempo real desde el Servidor AD aplicando el filtro:
 agent.name: "CLIENTE-WIN" AND data.win.system.eventID: 4625
 ```
 
-### 3. Telemetría Forense Extraída
+### 3. Analisís Forense Extraído
 Al expandir el log, Wazuh identificó con éxito:
 * Nombre del usuario atacado (`targetUserName`).
 * Dirección IP exacta del origen del ataque (`ipAddress`).
