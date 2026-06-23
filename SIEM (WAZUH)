@@ -1,0 +1,72 @@
+# Despliegue de SIEM Wazuh en Entorno Corporativo (Proxmox + pfSense + AD)
+
+Este proyecto documenta la instalación, resolución de problemas y despliegue centralizado del sistema de monitorización de seguridad **Wazuh** en una infraestructura de red gestionada por un cortafuegos perimetral, superando restricciones de Directivas de Grupo (GPO).
+
+# Arquitectura del Entorno
+ **Hipervisor:** Proxmox VE
+ **Firewall Perimetral:** pfSense (Configuración limpia por defecto)
+ **Servidor SIEM:** Ubuntu Server (Wazuh Manager + Indexer + Dashboard)
+ **Controlador de Dominio:** Windows Server (Active Directory)
+ **Endpoints:** Windows 11 (Máquinas de usuario unidas al dominio)
+
+---
+
+#  Fase 1: Instalación y Configuración del Servidor (Ubuntu)
+
+     1. Gestión de Espacio durante la Instalación
+Durante el despliegue en Ubuntu, se gestionaron las alertas de espacio libre redirigiendo el directorio temporal de instalación (`TMPDIR`) hacia el espacio disponible en la partición raíz (`/`), garantizando que el asistente de Wazuh pudiera desempaquetar sus componentes sin restricciones:
+```bash
+mkdir -p ~/tmp_instalador && export TMPDIR=~/tmp_instalador
+sudo env wazuh_check_requirements=false bash wazuh-install.sh
+```
+
+      2. Hardening y Control de Credenciales Web
+Por motivos de seguridad, la contraseña del usuario maestro (`admin`) se genera de forma aleatoria en la instalación automatizada y no se puede modificar desde el navegador (Error 401). Se forzó el cambio de clave directamente desde la terminal mediante la herramienta interna del indexador:
+```bash
+sudo bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/wazuh-passwords-tool.sh -u admin -p "NuevaContraseñaSegura123*"
+sudo systemctl restart wazuh-manager wazuh-indexer wazuh-dashboard
+```
+
+---
+
+#  Fase 2: Diagnóstico de Red y Causa Raíz
+
+ ## El Síntoma
+El agente de Wazuh en Windows iniciaba en estado *Running*, pero el panel web de Wazuh mostraba al dispositivo como desconectado (*Never connected* / *Connection timed out*). Curiosamente, el servidor Ubuntu sí podía hacer `ping` a Windows, pero Windows no recibía respuesta de Ubuntu ni lograba conectar con los puertos de datos `1514/1515`.
+
+ ## Análisis Técnico (Causa Raíz)
+Dado que el firewall perimetral **pfSense se mantuvo estrictamente en su configuración por defecto** (el cual permite todo el tráfico saliente de la LAN hacia cualquier destino de forma nativa), el problema no era de la red física. 
+
+El bloqueo provenía del propio sistema operativo cliente: al estar las máquinas unidas a **Active Directory**, las directivas de grupo locales restringían el tráfico saliente no catalogado y bloqueaban comandos administrativos esenciales (como cambiar el perfil de red a "Privada"), provocando un rechazo asimétrico de los paquetes hacia el servidor de seguridad.
+
+---
+
+#  Fase 3: Solución y Despliegue Centralizado mediante GPO
+
+La solución definitiva se aplicó de manera masiva y centralizada desde el **Controlador de Dominio de Active Directory**, eliminando la necesidad de interactuar máquina por máquina.
+
+ ## 1. Apertura del Firewall de Windows vía GPO
+Se creó y vinculó una Directiva de Grupo para abrir de forma obligatoria los puertos de comunicación del agente en los cortafuegos de los endpoints:
+* **Ruta:** `Configuración del equipo` > `Directivas` > `Configuración de Windows` > `Configuración de seguridad` > `Windows Firewall con seguridad avanzada`.
+* **Regla de Salida (Outbound Rule):** Se autorizó el protocolo **TCP** hacia los puertos específicos **1514 y 1515**, aplicando la regla a todos los perfiles (Dominio, Privado y Público).
+
+ ## 2. Script de Despliegue Desatendido (`wazuh-deploy.bat`)
+Se integró un script en lote dentro de las directivas de inicio de la GPO para automatizar la descarga, inyección de variables de conexión y arranque silencioso del servicio:
+
+```cmd
+@echo off
+:: Comprobar si el agente ya está instalado para evitar ejecuciones repetidas
+if exist "C:\Program Files (x86)\ossec-agent\wazuh-agent.exe" exit
+
+:: Descarga silenciosa del instalador MSI mediante PowerShell
+powershell -Command "Invoke-WebRequest -Uri 'https://wazuh.com' -OutFile 'C:\Windows\Temp\wazuh-agent.msi'"
+
+:: Instalación desatendida vinculando el agente a la IP del servidor Ubuntu
+msiexec.exe /i "C:\Windows\Temp\wazuh-agent.msi" /q WAZUH_MANAGER="IP_DE_TU_SERVER" WAZUH_REGISTRATION_SERVER="IP_DE_TU_SERVER"
+
+:: Asegurar el inicio del servicio del agente
+net start WazuhSvc
+```
+
+ ## 3. Aplicación y Resultados
+Se forzó la actualización de las directivas en los equipos clientes mediante el comando `gpupdate /force`. Tras el posterior reinicio de las estaciones de trabajo, las restricciones locales quedaron anuladas por la nueva regla de AD, el script instaló el agente en segundo plano y los endpoints de Windows 11 aparecieron automáticamente en estado **Active** (Verde) en el SIEM Wazuh.
